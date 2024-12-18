@@ -45,6 +45,7 @@ static int next_frame = 0;
 static int skipped_frames = 0;
 static unsigned long start_ms, curr_ms, next_frame_ms;
 static unsigned int video_idx = 1;
+char _alert[512];
 
 lilka::Canvas buffer(280, 240);
 
@@ -71,8 +72,12 @@ void playVideoWithAudio(String subdirStr) {
   sprintf(aFilePath, "/%s/%s%s", BASE_DIR, subdir, AAC_FILENAME);
   File aFile = SD.open(aFilePath);
   if (!aFile || aFile.isDirectory()) {
-    Serial.printf("ERROR: Failed to open %s file for reading\n", aFilePath);
-    buffer.printf("ERROR: Failed to open %s file for reading\n", aFilePath);
+    snprintf(_alert, sizeof(_alert), "Не можу відкрити файл %s", aFilePath);
+    Serial.println(aFilePath);
+    lilka::Alert Alert("Помилка:", _alert);
+    Alert.draw(&buffer);
+    lilka::display.drawCanvas(&buffer);
+    delay(3000);
     return;
   }
 
@@ -80,8 +85,12 @@ void playVideoWithAudio(String subdirStr) {
   sprintf(vFilePath, "/%s/%s%s", BASE_DIR, subdir, MJPEG_FILENAME);
   File vFile = SD.open(vFilePath);
   if (!vFile || vFile.isDirectory()) {
-    Serial.printf("ERROR: Failed to open %s file for reading\n", vFilePath);
-    buffer.printf("ERROR: Failed to open %s file for reading\n", vFilePath);
+    snprintf(_alert, sizeof(_alert), "Не можу відкрити файл %s", vFilePath);
+    Serial.println(aFilePath);
+    lilka::Alert Alert("Помилка:", _alert);
+    Alert.draw(&buffer);
+    lilka::display.drawCanvas(&buffer);
+    delay(3000);    
     return;
   }
 
@@ -110,6 +119,8 @@ void playVideoWithAudio(String subdirStr) {
     {
       // Play video
       mjpeg_draw_frame();
+      delay(2);                    // TODO: дуже некрасивий хак щоб зменшити тірінг, треба якось придумати щось інше...
+      lilka::display.drawCanvas(&buffer);
       total_decode_video_ms += millis() - curr_ms;
       curr_ms = millis();
     } else {
@@ -118,7 +129,6 @@ void playVideoWithAudio(String subdirStr) {
     }
 
     while (millis() < next_frame_ms) {
-      lilka::display.drawCanvas(&buffer);
       vTaskDelay(pdMS_TO_TICKS(1));
     }
 
@@ -185,7 +195,6 @@ void loop() {
   char *_dirname = const_cast<char*>(BASE_DIR);
   char _dirpath[255];
   sprintf(_dirpath, "/%s/", BASE_DIR);
-  char _alert[512];
   size_t _numEntries = lilka::fileutils.getEntryCount(&SD, _dirpath);
 
   if (_numEntries == 0) {
