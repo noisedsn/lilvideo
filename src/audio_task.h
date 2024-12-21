@@ -3,21 +3,59 @@
 static unsigned long total_read_audio_ms = 0;
 static unsigned long total_decode_audio_ms = 0;
 static unsigned long total_play_audio_ms = 0;
+int _volume;
 
-static int _samprate = 0;
+// Регулювання гучності з бібліотеки ArduinoSound
+// https://github.com/arduino-libraries/ArduinoSound/blob/master/src/AudioOut.cpp
+static void adjustVolume(void* pwm_buffer, size_t size, int bitsPerSample)
+{
+  int samples = size / (bitsPerSample / 8);
+
+  if (bitsPerSample == 8) {
+    uint8_t* smp = (uint8_t*)pwm_buffer;
+
+    for (int i = 0; i < samples; i++) {
+      *smp = (*smp * _volume) >> 10;
+
+      smp++;
+    }
+  } else if (bitsPerSample == 16) {
+    int16_t* smp = (int16_t*)pwm_buffer;
+
+    for (int i = 0; i < samples; i++) {
+      *smp = (*smp * _volume) >> 10;
+
+      smp++;
+    }
+  } else if (bitsPerSample == 32) {
+    int32_t* smp = (int32_t*)pwm_buffer;
+
+    for (int i = 0; i < samples; i++) {
+      *smp = (*smp * _volume) >> 10;
+
+      smp++;
+    }
+  }
+}
+
+// static int _samprate = 0;
 static void audioDataCallback(AACFrameInfo &info, int16_t *pwm_buffer, size_t len, void*)
 {
     unsigned long s = millis();
-    if (_samprate != info.sampRateOut)
-    {
-        Serial.printf("bitRate: %d, nChans: %d, sampRateCore: %d, sampRateOut: %d, bitsPerSample: %d, outputSamps: %d, profile: %d, tnsUsed: %d, pnsUsed: %d",
-                   info.bitRate, info.nChans, info.sampRateCore, info.sampRateOut, info.bitsPerSample, info.outputSamps, info.profile, info.tnsUsed, info.pnsUsed);
-        // TODO: чомусь не працює перемикання частоти на льоту
-        // esp_i2s::i2s_set_clk(esp_i2s::I2S_NUM_0, info.sampRateOut /* sample_rate */, info.bitsPerSample /* bits_cfg */, (info.nChans == 2) ? esp_i2s::I2S_CHANNEL_STEREO : esp_i2s::I2S_CHANNEL_MONO /* channel */);
-        _samprate = info.sampRateOut;
-    }
+    // if (_samprate != info.sampRateOut)
+    // {
+    //     // Serial.printf("bitRate: %d, nChans: %d, sampRateCore: %d, sampRateOut: %d, bitsPerSample: %d, outputSamps: %d, profile: %d, tnsUsed: %d, pnsUsed: %d",
+    //     //            info.bitRate, info.nChans, info.sampRateCore, info.sampRateOut, info.bitsPerSample, info.outputSamps, info.profile, info.tnsUsed, info.pnsUsed);
+    //     // TODO: чомусь не працює перемикання частоти на льоту
+    //     // i2s_set_clk(esp_i2s::I2S_NUM_0, info.sampRateOut /* sample_rate */, info.bitsPerSample /* bits_cfg */, (info.nChans == 2) ? esp_i2s::I2S_CHANNEL_STEREO : esp_i2s::I2S_CHANNEL_MONO /* channel */);
+    //     _samprate = info.sampRateOut;
+    // }
+
+    _volume = (volume * 1024.0) / 100.0;
+    adjustVolume(pwm_buffer, len * 2, info.bitsPerSample);
+
     size_t i2s_bytes_written = 0;
-    esp_i2s::i2s_write(esp_i2s::I2S_NUM_0, pwm_buffer, len * 2, &i2s_bytes_written, portMAX_DELAY);
+    i2s_write(esp_i2s::I2S_NUM_0, pwm_buffer, len * 2, &i2s_bytes_written, portMAX_DELAY);
     // log_i("len: %d, i2s_bytes_written: %d", len, i2s_bytes_written);
     // Serial.printf(" chan: %d", info.nChans);
     total_play_audio_ms += millis() - s;

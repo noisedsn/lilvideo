@@ -34,23 +34,27 @@
 
 
 
-/* Audio */
-#include "audio_task.h"
-
-/* MJPEG Video */
-#include "video_task.h"
-
 /* Variables */
 static int next_frame = 0;
 static int skipped_frames = 0;
 static unsigned long start_ms, curr_ms, next_frame_ms;
 static unsigned int video_idx = 1;
 char _alert[512];
+int volume = 100;
+int osdFrames = 60;
+String osdStr = "";
+
+
+
 
 lilka::Canvas buffer(280, 240);
 
-void playVideoWithAudio(String subdir);
-void controllerTask(void *parameter);
+/* Audio */
+#include "audio_task.h"
+
+/* MJPEG Video */
+#include "video_task.h"
+
 
 
 
@@ -62,6 +66,24 @@ static int drawMCU(JPEGDRAW *pDraw) {
   return 1;
 }
 
+void drawOSD(String osdStr) {
+  if (osdStr && osdFrames > 0) {
+    buffer.setFont(FONT_10x20);
+    buffer.setTextColor(lilka::colors::Green);
+    buffer.setCursor(32, 32);
+    buffer.print(osdStr);
+    osdFrames --;
+  }
+}
+
+void showAlert(String alertStr, int alertDelay) {
+    Serial.println(alertStr);
+    lilka::Alert Alert("Помилка:", alertStr);
+    Alert.draw(&buffer);
+    lilka::display.drawCanvas(&buffer);
+    delay(alertDelay);
+    return;
+}
 
 void playVideoWithAudio(String subdirStr) {
   char *subdir = const_cast<char*>(subdirStr.c_str());
@@ -73,11 +95,7 @@ void playVideoWithAudio(String subdirStr) {
   File aFile = SD.open(aFilePath);
   if (!aFile || aFile.isDirectory()) {
     snprintf(_alert, sizeof(_alert), "Не можу відкрити файл %s", aFilePath);
-    Serial.println(aFilePath);
-    lilka::Alert Alert("Помилка:", _alert);
-    Alert.draw(&buffer);
-    lilka::display.drawCanvas(&buffer);
-    delay(3000);
+    showAlert(_alert, 3000);
     return;
   }
 
@@ -86,11 +104,7 @@ void playVideoWithAudio(String subdirStr) {
   File vFile = SD.open(vFilePath);
   if (!vFile || vFile.isDirectory()) {
     snprintf(_alert, sizeof(_alert), "Не можу відкрити файл %s", vFilePath);
-    Serial.println(aFilePath);
-    lilka::Alert Alert("Помилка:", _alert);
-    Alert.draw(&buffer);
-    lilka::display.drawCanvas(&buffer);
-    delay(3000);    
+    showAlert(_alert, 3000);
     return;
   }
 
@@ -99,8 +113,8 @@ void playVideoWithAudio(String subdirStr) {
   Serial.printf("Start play audio task %s\n", aFilePath);
   BaseType_t ret = aac_player_task_start(&aFile, AUDIOASSIGNCORE);
   if (ret != pdPASS) {
-    Serial.printf("Audio player task start failed: %d\n", ret);
-    buffer.printf("Audio player task start failed: %d\n", ret);
+    snprintf(_alert, sizeof(_alert), "Audio player task start failed: %d\n", ret);
+    showAlert(_alert, 3000);
   }
 
   Serial.println("Start playing video");
@@ -115,12 +129,14 @@ void playVideoWithAudio(String subdirStr) {
     total_read_video_ms += millis() - curr_ms;
     curr_ms = millis();
 
-    if (millis() < next_frame_ms)  // check show frame or skip frame
+    if (millis() < next_frame_ms)   // check show frame or skip frame
     {
       // Play video
       mjpeg_draw_frame();
-      delay(2);                    // TODO: дуже некрасивий хак щоб зменшити тірінг, треба якось придумати щось інше...
+      delay(2);                     // TODO: дуже некрасивий хак щоб зменшити тірінг, треба якось придумати щось інше...
+      drawOSD(osdStr);              // TODO: solve osd flickering
       lilka::display.drawCanvas(&buffer);
+
       total_decode_video_ms += millis() - curr_ms;
       curr_ms = millis();
     } else {
@@ -147,12 +163,33 @@ void playVideoWithAudio(String subdirStr) {
 }
 
 
-// back to Keira OS on A button press
+// Controls
 void controllerTask(void *parameter) {
   while (1) {
-    if (lilka::controller.getState().a.justPressed) {
+    
+    lilka::State state = lilka::controller.getState();
+    
+    // back to Keira OS on A button press
+    if (state.a.justPressed) {
       esp_restart();
     }
+
+    // Volume
+    if (state.up.justPressed) {
+      if (volume < 100) volume += 10;
+
+      osdStr = "Гучність: " + (String)volume;
+      osdFrames = 60;
+      Serial.println(osdStr);
+    }
+    if (state.down.justPressed) {
+      if (volume > 0) volume -= 10;
+      
+      osdStr = "Гучність: " + (String)volume;
+      osdFrames = 60;
+      Serial.println(osdStr);
+    }
+
     vTaskDelay(100);
   }
 }
@@ -189,6 +226,8 @@ void setup() {
 
 }
 
+
+
 void loop() {
 
   // Read /Video folder on SD
@@ -199,20 +238,14 @@ void loop() {
 
   if (_numEntries == 0) {
     snprintf(_alert, sizeof(_alert), "Директорія порожня, \nабо сталася помилка \nчитання директорії \n%s", _dirname);
-    lilka::Alert Alert("Помилка:", _alert);
-    Alert.draw(&buffer);
-    lilka::display.drawCanvas(&buffer);
-    delay(10000);
+    showAlert(_alert, 5000);
     esp_restart();
   }
   lilka::Entry* entries = new lilka::Entry[_numEntries];
   int numEntries = lilka::fileutils.listDir(&SD, _dirpath, entries);
   if (_numEntries != numEntries) {
     snprintf(_alert, sizeof(_alert), "Не вдалося прочитати \nдиректорію %s", _dirname);
-    lilka::Alert Alert("Помилка:", _alert);
-    Alert.draw(&buffer);
-    lilka::display.drawCanvas(&buffer);
-    delay(10000);
+    showAlert(_alert, 5000);
     esp_restart();
   }
 
@@ -238,7 +271,6 @@ void loop() {
   int index = menu.getCursor();
   lilka::MenuItem item;
   menu.getItem(index, &item);
-  Serial.println(String("Ви обрали пункт ") + item.title);
   
   if (item.title == "<< Вихід") esp_restart();
 
