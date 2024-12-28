@@ -7,40 +7,38 @@ int _volume;
 
 // Регулювання гучності з бібліотеки ArduinoSound
 // https://github.com/arduino-libraries/ArduinoSound/blob/master/src/AudioOut.cpp
-static void adjustVolume(void* pwm_buffer, size_t size, int bitsPerSample)
-{
-  int samples = size / (bitsPerSample / 8);
+static void adjustVolume(void* pwm_buffer, size_t size, int bitsPerSample) {
+    int samples = size / (bitsPerSample / 8);
 
-  if (bitsPerSample == 8) {
-    uint8_t* smp = (uint8_t*)pwm_buffer;
+    if (bitsPerSample == 8) {
+        uint8_t* smp = (uint8_t*)pwm_buffer;
 
-    for (int i = 0; i < samples; i++) {
-      *smp = (*smp * _volume) >> 10;
+        for (int i = 0; i < samples; i++) {
+            *smp = (*smp * _volume) >> 10;
 
-      smp++;
+            smp++;
+        }
+    } else if (bitsPerSample == 16) {
+        int16_t* smp = (int16_t*)pwm_buffer;
+
+        for (int i = 0; i < samples; i++) {
+            *smp = (*smp * _volume) >> 10;
+
+            smp++;
+        }
+    } else if (bitsPerSample == 32) {
+        int32_t* smp = (int32_t*)pwm_buffer;
+
+        for (int i = 0; i < samples; i++) {
+            *smp = (*smp * _volume) >> 10;
+
+            smp++;
+        }
     }
-  } else if (bitsPerSample == 16) {
-    int16_t* smp = (int16_t*)pwm_buffer;
-
-    for (int i = 0; i < samples; i++) {
-      *smp = (*smp * _volume) >> 10;
-
-      smp++;
-    }
-  } else if (bitsPerSample == 32) {
-    int32_t* smp = (int32_t*)pwm_buffer;
-
-    for (int i = 0; i < samples; i++) {
-      *smp = (*smp * _volume) >> 10;
-
-      smp++;
-    }
-  }
 }
 
 // static int _samprate = 0;
-static void audioDataCallback(AACFrameInfo &info, int16_t *pwm_buffer, size_t len, void*)
-{
+static void audioDataCallback(AACFrameInfo& info, int16_t* pwm_buffer, size_t len, void*) {
     unsigned long s = millis();
     // if (_samprate != info.sampRateOut)
     // {
@@ -63,19 +61,16 @@ static void audioDataCallback(AACFrameInfo &info, int16_t *pwm_buffer, size_t le
 
 static libhelix::AACDecoderHelix _aac(audioDataCallback);
 static uint8_t _frame[AAC_MAX_FRAME_SIZE];
-static void aac_player_task(void *pvParam)
-{
-    Stream *input = (Stream *)pvParam;
+static void aac_player_task(void* pvParam) {
+    Stream* input = (Stream*)pvParam;
 
     int r, w;
     unsigned long ms = millis();
-    while (r = input->readBytes(_frame, AAC_MAX_FRAME_SIZE))
-    {
+    while (r = input->readBytes(_frame, AAC_MAX_FRAME_SIZE)) {
         total_read_audio_ms += millis() - ms;
         ms = millis();
 
-        while (r > 0)
-        {
+        while (r > 0) {
             w = _aac.write(_frame, r);
             // Serial.printf("r: %d, w: %d\n", r, w);
             r -= w;
@@ -89,16 +84,16 @@ static void aac_player_task(void *pvParam)
 }
 
 TaskHandle_t _audio_task;
-static BaseType_t aac_player_task_start(Stream *input, int core)
-{
+static BaseType_t aac_player_task_start(Stream* input, int core) {
     _aac.begin();
 
     return xTaskCreatePinnedToCore(
         (TaskFunction_t)aac_player_task,
-        (const char *const)"AAC Player Task",
+        (const char* const)"AAC Player Task",
         (const uint32_t)2000,
-        (void *const)input,
+        (void* const)input,
         (UBaseType_t)configMAX_PRIORITIES - 1,
-        (TaskHandle_t *const)&_audio_task,
-        (const BaseType_t)0);
+        (TaskHandle_t* const)&_audio_task,
+        (const BaseType_t)0
+    );
 }
